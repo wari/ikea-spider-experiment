@@ -57,6 +57,11 @@ struct Department {
     url: String,
 }
 
+struct Country<'a> {
+    name: &'a str,
+    url: &'a str,
+}
+
 enum Output {
     File(String),
     Database(Connection),
@@ -72,14 +77,16 @@ fn get_html(url: &str) -> Result<NodeRef> {
     Ok(kuchiki::parse_html().one(html))
 }
 
-fn write_department_products(output: Output) {
+fn write_department_products(country: &Country, output: Output) {
     let mut hashmap = HashMap::<String, Product>::new();
     let mut visited_urls = HashMap::<String, bool>::new();
 
     let department = Department {
-        url: String::from("/sg/en/catalog/categories/departments/childrens_ikea/"),
+        url: format!("{}/catalog/categories/departments/childrens_ikea/", &country.url),
         name: String::from("Children's IKEA"),
     };
+
+    println!("{}", &department.url);
 
     get_products_from_all_departments(&mut visited_urls, &mut hashmap, vec![department]);
     println!("Total products: {}\n", hashmap.len());
@@ -397,16 +404,16 @@ fn get_node_attr_value(document: &NodeRef, css_selector: &str, name: &str) -> Op
     }
 }
 
-fn do_file(matches: &Matches) {
+fn do_file(country: &Country, matches: &Matches) {
     let output = match matches.opt_str("o") {
         Some(o) => o,
         None => "output.csv".to_string(),
     };
 
-    write_department_products(Output::File(output));
+    write_department_products(country, Output::File(output));
 }
 
-fn do_database() {
+fn do_database(country: &Country) {
     let conn = Connection::connect("postgres://postgres@localhost", SslMode::None).unwrap();
     let _ = conn.execute(
         "CREATE TABLE product (
@@ -429,7 +436,7 @@ fn do_database() {
                      updated_at      TIMESTAMP WITH TIME ZONE NOT NULL
          )", &[]);
 
-    write_department_products(Output::Database(conn));
+    write_department_products(country, Output::Database(conn));
 }
 
 fn print_usage(program: &str, opts: Options) {
@@ -437,7 +444,24 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
+fn print_countries(countries: &[Country]) {
+    let mut i = 0;
+
+    println!("Select a country index from the following list (specify using -c flag):");
+    for country in countries {
+        println!("{}: {}", i, &country.name);
+        i += 1;
+    }
+}
+
 fn main() {
+    let countries = [
+        Country { name: "Singapore", url: "/sg/en" },
+        Country { name: "Malaysia English", url: "/my/en" },
+        Country { name: "Malaysia Bahasa", url: "/my/ms" },
+        Country { name: "Thailand Thailand", url: "/th/th" },
+    ];
+
     // Parse program arguments
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
@@ -445,12 +469,16 @@ fn main() {
     let mut opts = Options::new();
     opts.optopt("t",
                 "type",
-                "set type of data to be served which can be file or http (default: file)",
+                "set type of backend",
                 "TYPE");
     opts.optopt("o",
                 "output",
-                "set output file name if served as file (default: output.csv)",
+                "set output file name",
                 "FILE");
+    opts.optopt("c",
+                "country",
+                "set country index",
+                "COUNTRY INDEX");
     opts.optflag("h", "help", "print this help menu");
 
     let matches = match opts.parse(&args[1..]) {
@@ -462,15 +490,34 @@ fn main() {
         return;
     }
 
+    let country = match matches.opt_str("c") {
+        Some(index_str) => {
+            if let Ok(index) = index_str.parse::<usize>() {
+                if index > countries.len() - 1{
+                    println!("Country index is too big!");
+                    return;
+                }
+                &countries[index]
+            } else {
+                println!("Invalid country index!");
+                return;
+            }
+        },
+        None => {
+            print_countries(&countries);
+            return;
+        },
+    };
+
     let typ: String = match matches.opt_str("t") {
         Some(t) => t,
         None => "file".to_string(),
     };
 
     if typ == "file" {
-        do_file(&matches);
-    } else if typ == "http" {
-        do_database();
+        do_file(country, &matches);
+    } else if typ == "database" {
+        do_database(country);
     }
 }
 
