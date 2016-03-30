@@ -498,6 +498,10 @@ fn main() {
                 "dbport",
                 "set database port",
                 "DBPORT");
+    opts.optopt("",
+                "loop",
+                "forever scrape the website",
+                "");
     opts.optflag("h", "help", "print this help menu");
 
     let matches = match opts.parse(&args[1..]) {
@@ -533,9 +537,15 @@ fn main() {
         None => "file".to_string(),
     };
 
-    if typ == "file" {
-        do_file(country, &matches);
-    } else if typ == "database" {
-        do_database(country, &matches);
+    loop {
+        if typ == "file" {
+            do_file(country, &matches);
+        } else if typ == "database" {
+            do_database(country, &matches);
+        }
+
+        if !matches.opt_present("loop") {
+            break;
+        }
     }
 }
