@@ -413,8 +413,18 @@ fn do_file(country: &Country, matches: &Matches) {
     write_department_products(country, Output::File(output));
 }
 
-fn do_database(country: &Country) {
-    let conn = Connection::connect("postgres://postgres@localhost", SslMode::None).unwrap();
+fn do_database(country: &Country, matches: &Matches) {
+    let dbhost: String = match matches.opt_str("dbhost") {
+        Some(t) => t,
+        None => "localhost".to_string(),
+    };
+
+    let dbport: String = match matches.opt_str("dbport") {
+        Some(t) => t,
+        None => "5432".to_string(),
+    };
+
+    let conn = Connection::connect(format!("postgres://postgres@{}:{}", dbhost, dbport).as_str(), SslMode::None).unwrap();
     let _ = conn.execute(
         "CREATE TABLE product (
                      id              VARCHAR NOT NULL,
@@ -480,6 +490,14 @@ fn main() {
                 "country",
                 "set country index",
                 "COUNTRY INDEX");
+    opts.optopt("",
+                "dbhost",
+                "set database host",
+                "DBHOST");
+    opts.optopt("",
+                "dbport",
+                "set database port",
+                "DBPORT");
     opts.optflag("h", "help", "print this help menu");
 
     let matches = match opts.parse(&args[1..]) {
@@ -518,6 +536,6 @@ fn main() {
     if typ == "file" {
         do_file(country, &matches);
     } else if typ == "database" {
-        do_database(country);
+        do_database(country, &matches);
     }
 }
