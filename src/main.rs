@@ -165,7 +165,7 @@ fn write_to_database(hashmap: HashMap<String, Product>, conn: &Connection) {
                               created_at,
                               updated_at
                           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
-                            ON CONFLICT (id)
+                            ON CONFLICT (id, country, url)
                             DO UPDATE SET
                                 name=$2,
                                 type=$3,
@@ -417,7 +417,7 @@ fn do_database(country: &Country) {
     let conn = Connection::connect("postgres://postgres@localhost", SslMode::None).unwrap();
     let _ = conn.execute(
         "CREATE TABLE product (
-                     id              VARCHAR PRIMARY KEY,
+                     id              VARCHAR NOT NULL,
                      name            VARCHAR NOT NULL,
                      type            VARCHAR NOT NULL,
                      country         VARCHAR NOT NULL,
@@ -433,7 +433,8 @@ fn do_database(country: &Country) {
                      category_url    VARCHAR NOT NULL,
                      subcategory_url VARCHAR NOT NULL,
                      created_at      TIMESTAMP WITH TIME ZONE NOT NULL,
-                     updated_at      TIMESTAMP WITH TIME ZONE NOT NULL
+                     updated_at      TIMESTAMP WITH TIME ZONE NOT NULL,
+                     UNIQUE (id, country, url)
          )", &[]);
 
     write_department_products(country, Output::Database(conn));
