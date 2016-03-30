@@ -424,7 +424,17 @@ fn do_database(country: &Country, matches: &Matches) {
         None => "5432".to_string(),
     };
 
-    let conn = Connection::connect(format!("postgres://postgres@{}:{}", dbhost, dbport).as_str(), SslMode::None).unwrap();
+    let dbuser: String = match matches.opt_str("dbuser") {
+        Some(t) => t,
+        None => "postgres".to_string(),
+    };
+
+    let dbpass: String = match matches.opt_str("dbpass") {
+        Some(t) => format!(":{}", t),
+        None => "".to_string(),
+    };
+
+    let conn = Connection::connect(format!("postgres://{}{}@{}:{}", dbuser, dbpass, dbhost, dbport).as_str(), SslMode::None).unwrap();
     let _ = conn.execute(
         "CREATE TABLE product (
                      id              VARCHAR NOT NULL,
@@ -498,6 +508,14 @@ fn main() {
                 "dbport",
                 "set database port",
                 "DBPORT");
+    opts.optopt("",
+                "dbuser",
+                "set database username",
+                "DBUSER");
+    opts.optopt("",
+                "dbpass",
+                "set database password",
+                "DBPASS");
     opts.optopt("",
                 "loop",
                 "forever scrape the website",
