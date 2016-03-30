@@ -1,6 +1,7 @@
 extern crate hyper;
 extern crate kuchiki;
 extern crate postgres;
+extern crate url;
 extern crate getopts;
 extern crate undup;
 
@@ -22,6 +23,9 @@ use kuchiki::NodeData::Element;
 
 // Postgres
 use postgres::{Connection, SslMode};
+
+// URL
+use url::percent_encoding::*;
 
 // Getopts
 use getopts::{Matches, Options};
@@ -425,12 +429,12 @@ fn do_database(country: &Country, matches: &Matches) {
     };
 
     let dbuser: String = match matches.opt_str("dbuser") {
-        Some(t) => t,
+        Some(t) => percent_encode(t.as_bytes(), FORM_URLENCODED_ENCODE_SET),
         None => "postgres".to_string(),
     };
 
     let dbpass: String = match matches.opt_str("dbpass") {
-        Some(t) => format!(":{}", t),
+        Some(t) => format!(":{}", percent_encode(t.as_bytes(), FORM_URLENCODED_ENCODE_SET)),
         None => "".to_string(),
     };
 

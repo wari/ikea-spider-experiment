@@ -7,5 +7,6 @@ authors = ["Jacky Boen <jacky.boen@bartleboglehegarty.com>"]
 kuchiki = "*"
 hyper = "*"
 postgres = "*"
+url = "*"
 getopts = "*"
 undup = "*"
