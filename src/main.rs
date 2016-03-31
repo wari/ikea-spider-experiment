@@ -12,6 +12,8 @@ use std::io::prelude::*;
 use std::string::String;
 use std::collections::HashMap;
 use std::result;
+use std::thread::sleep;
+use std::time::Duration;
 
 // Hyper
 use hyper::client::Client;
@@ -520,6 +522,10 @@ fn main() {
                 "dbpass",
                 "set database password",
                 "DBPASS");
+    opts.optopt("i",
+                "interval",
+                "set loop interval in seconds (default: 60)",
+                "SECS");
     opts.optflag("l", "loop", "forever scrape the website");
     opts.optflag("h", "help", "print this help menu");
 
@@ -556,6 +562,17 @@ fn main() {
         None => "file".to_string(),
     };
 
+    let interval = match matches.opt_str("i") {
+        Some(t) => match t.parse::<u64>() {
+            Ok(secs) => secs,
+            Err(_) => {
+                println!("Argument passed to -i or --interval is not a number!");
+                return;
+            },
+        },
+        None => 60,
+    };
+
     loop {
         if typ == "file" {
             do_file(country, &matches);
@@ -566,5 +583,7 @@ fn main() {
         if !matches.opt_present("loop") {
             break;
         }
+
+        sleep(Duration::new(interval, 0));
     }
 }
