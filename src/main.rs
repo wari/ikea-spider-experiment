@@ -520,10 +520,7 @@ fn main() {
                 "dbpass",
                 "set database password",
                 "DBPASS");
-    opts.optopt("",
-                "loop",
-                "forever scrape the website",
-                "");
+    opts.optflag("l", "loop", "forever scrape the website");
     opts.optflag("h", "help", "print this help menu");
 
     let matches = match opts.parse(&args[1..]) {
