@@ -96,12 +96,12 @@ fn write_department_products(country: &Country, output: Output) {
     println!("Total products: {}\n", hashmap.len());
 
     match output {
-        Output::File(filename) => write_to_file(hashmap, &filename),
-        Output::Database(conn) => write_to_database(hashmap, &conn),
+        Output::File(filename) => write_to_file(hashmap, &filename, country),
+        Output::Database(conn) => write_to_database(hashmap, &conn, country),
     }
 }
 
-fn write_to_file(hashmap: HashMap<String, Product>, output: &str) {
+fn write_to_file(hashmap: HashMap<String, Product>, output: &str, country: &Country) {
     let max_count = hashmap.len();
     let mut index = 1;
 
@@ -115,11 +115,11 @@ fn write_to_file(hashmap: HashMap<String, Product>, output: &str) {
     }
 
     for i in hashmap {
-        if let Some(product) = get_product_info(i.0.as_str()) {
+        if let Some(product) = get_product_info(i.0.as_str(), country) {
             if let Err(error) = f.write_all(format!(
 				     "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
                      product.id,
-                     undup_chars(&product.name, vec![' ']),
+                     product.name,
                      product.typ,
                      product.price,
                      product.unit,
@@ -144,12 +144,12 @@ fn write_to_file(hashmap: HashMap<String, Product>, output: &str) {
     }
 }
 
-fn write_to_database(hashmap: HashMap<String, Product>, conn: &Connection) {
+fn write_to_database(hashmap: HashMap<String, Product>, conn: &Connection, country: &Country) {
     let max_count = hashmap.len();
     let mut index = 1;
 
     for i in hashmap {
-        if let Some(product) = get_product_info(i.0.as_str()) {
+        if let Some(product) = get_product_info(i.0.as_str(), country) {
             conn.execute("INSERT INTO product (
                               id,
                               name,
@@ -257,7 +257,7 @@ fn get_products_from_all_departments(visited_urls: &mut HashMap<String, bool>, h
                 id: String::from(""),
                 name: String::from(""),
                 typ: String::from(""),
-                country: String::from("Singapore"),
+                country: String::from(""),
                 price: String::from(""),
                 unit: String::from(""),
                 metric: String::from(""),
@@ -335,7 +335,7 @@ fn has_product(document: &NodeRef) -> bool {
     matches.count() > 0
 }
 
-fn get_product_info(url: &str) -> Option<Product> {
+fn get_product_info(url: &str, country: &Country) -> Option<Product> {
     let document = match get_html(format!("{}{}", BASE_ADDRESS, url).as_str()) {
         Ok(doc) => doc,
         Err(error) => {
@@ -346,10 +346,10 @@ fn get_product_info(url: &str) -> Option<Product> {
 
     Some(Product {
         id: get_node_text(&document, "#itemNumber").unwrap_or_default(),
-        name: get_node_text(&document, "#name").unwrap_or_default(),
+        name: undup_chars(&get_node_text(&document, "#name").unwrap_or_default(), vec![' ']).replace("\n", ""),
         typ: get_node_text(&document, "#type").unwrap_or_default(),
         price: get_node_text(&document, "#price1").unwrap_or_default(),
-        country: "Singapore".to_string(),
+        country: country.name.to_string(),
         unit: get_node_text(&document, ".productunit").unwrap_or_default(),
         metric: get_node_text(&document, "#metric").unwrap_or_default(),
         image_url: get_node_attr_value(&document, "#productImg", "src").unwrap_or_default(),
@@ -484,7 +484,7 @@ fn main() {
         Country { name: "Singapore", url: "/sg/en" },
         Country { name: "Malaysia English", url: "/my/en" },
         Country { name: "Malaysia Bahasa", url: "/my/ms" },
-        Country { name: "Thailand Thailand", url: "/th/th" },
+        Country { name: "Thailand Thai", url: "/th/th" },
     ];
 
     // Parse program arguments
