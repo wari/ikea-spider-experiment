@@ -431,12 +431,12 @@ fn do_database(country: &Country, matches: &Matches) {
     };
 
     let dbuser: String = match matches.opt_str("dbuser") {
-        Some(t) => percent_encode(t.as_bytes(), FORM_URLENCODED_ENCODE_SET),
+        Some(t) => percent_encode(t.as_bytes(), QUERY_ENCODE_SET).collect::<String>(),
         None => "postgres".to_string(),
     };
 
     let dbpass: String = match matches.opt_str("dbpass") {
-        Some(t) => format!(":{}", percent_encode(t.as_bytes(), FORM_URLENCODED_ENCODE_SET)),
+        Some(t) => format!(":{}", percent_encode(t.as_bytes(), QUERY_ENCODE_SET)),
         None => "".to_string(),
     };
 
