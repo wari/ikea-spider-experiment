@@ -10,7 +10,7 @@ use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 use std::string::String;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::result;
 use std::thread::sleep;
 use std::time::{Duration,Instant};
@@ -84,8 +84,8 @@ fn fetch_html(url: &str) -> Result<NodeRef> {
 }
 
 fn write_department_products(country: &Country, output: Output) {
-    let mut hashmap = HashMap::<String, Product>::new();
-    let mut visited_urls = HashMap::<String, bool>::new();
+    let mut m = BTreeMap::<String, Product>::new();
+    let mut visited_urls = BTreeMap::<String, bool>::new();
 
     let departments = match fetch_departments(&country) {
         Some(departments) => departments,
@@ -95,18 +95,18 @@ fn write_department_products(country: &Country, output: Output) {
     for department in departments {
         println!("{}", &department.url);
 
-        fetch_products_from_all_departments(&mut visited_urls, &mut hashmap, vec![department]);
-        println!("Total products: {}\n", hashmap.len());
+        fetch_products_from_all_departments(&mut visited_urls, &mut m, vec![department]);
+        println!("Total products: {}\n", m.len());
 
         match output {
-            Output::File(ref filename) => write_to_file(&hashmap, &filename, country),
-            Output::Database(ref conn) => write_to_database(&hashmap, &conn, country),
+            Output::File(ref filename) => write_to_file(&m, &filename, country),
+            Output::Database(ref conn) => write_to_database(&m, &conn, country),
         }
     }
 }
 
-fn write_to_file(hashmap: &HashMap<String, Product>, output: &str, country: &Country) {
-    let max_count = hashmap.len();
+fn write_to_file(m: &BTreeMap<String, Product>, output: &str, country: &Country) {
+    let max_count = m.len();
     let mut index = 1;
 
     let mut f = match File::create(output) {
@@ -118,7 +118,7 @@ fn write_to_file(hashmap: &HashMap<String, Product>, output: &str, country: &Cou
         panic!(error);
     }
 
-    for i in hashmap {
+    for i in m {
         if let Some(product) = fetch_product_info(i.0.as_str(), country) {
             if let Err(error) = f.write_all(format!(
 				     "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
@@ -148,11 +148,11 @@ fn write_to_file(hashmap: &HashMap<String, Product>, output: &str, country: &Cou
     }
 }
 
-fn write_to_database(hashmap: &HashMap<String, Product>, conn: &Connection, country: &Country) {
-    let max_count = hashmap.len();
+fn write_to_database(m: &BTreeMap<String, Product>, conn: &Connection, country: &Country) {
+    let max_count = m.len();
     let mut index = 1;
 
-    for i in hashmap {
+    for i in m {
         if let Some(product) = fetch_product_info(i.0.as_str(), country) {
             conn.execute("INSERT INTO product (
                               id,
@@ -270,7 +270,7 @@ fn fetch_departments(country: &Country) -> Option<Vec<Department>> {
     return Some(departments);
 }
 
-fn fetch_products_from_all_departments(visited_urls: &mut HashMap<String, bool>, hashmap: &mut HashMap<String, Product>, hierarchy: Vec<Department>) {
+fn fetch_products_from_all_departments(visited_urls: &mut BTreeMap<String, bool>, m: &mut BTreeMap<String, Product>, hierarchy: Vec<Department>) {
     let department = if let Some(department) = hierarchy.last() {
         department
     } else {
@@ -332,7 +332,7 @@ fn fetch_products_from_all_departments(visited_urls: &mut HashMap<String, bool>,
                 subcategory_url: if hierarchy.len() >= 3 { hierarchy[2].url.clone() } else { "".to_string() },
             };
 
-            hashmap.insert(url.clone(), product);
+            m.insert(url.clone(), product);
         }
     } else {
         let matches = match document.select(".visualNavContainer a") {
@@ -379,7 +379,7 @@ fn fetch_products_from_all_departments(visited_urls: &mut HashMap<String, bool>,
             let mut next_hierarchy = hierarchy.clone();
             next_hierarchy.push(department);
 
-            fetch_products_from_all_departments(visited_urls, hashmap, next_hierarchy);
+            fetch_products_from_all_departments(visited_urls, m, next_hierarchy);
         }
     }
 }
