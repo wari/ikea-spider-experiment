@@ -17,6 +17,8 @@ use std::time::{Duration,Instant};
 
 // Hyper
 use hyper::client::Client;
+use hyper::client::response::Response;
+use hyper::status::StatusCode;
 
 // Kuchiki
 use kuchiki::traits::*;
@@ -83,7 +85,7 @@ fn fetch_html(url: &str) -> Result<NodeRef> {
     Ok(kuchiki::parse_html().one(html))
 }
 
-fn write_department_products(country: &Country, output: Output) {
+fn write_department_products(country: &Country, output: Output, mut error_str: &mut String) {
     let mut m = BTreeMap::<String, Product>::new();
     let mut visited_urls = BTreeMap::<String, bool>::new();
 
@@ -93,19 +95,16 @@ fn write_department_products(country: &Country, output: Output) {
     };
 
     for department in departments {
-        println!("{}", &department.url);
-
-        fetch_products_from_all_departments(&mut visited_urls, &mut m, vec![department]);
-        println!("Total products: {}\n", m.len());
+        &fetch_products_from_all_departments(&mut visited_urls, &mut m, vec![department], &mut error_str);
 
         match output {
-            Output::File(ref filename) => write_to_file(&m, &filename, country),
-            Output::Database(ref conn) => write_to_database(&m, &conn, country),
+            Output::File(ref filename) => write_to_file(&m, &filename, country, &mut error_str),
+            Output::Database(ref conn) => write_to_database(&m, &conn, country, &mut error_str),
         }
     }
 }
 
-fn write_to_file(m: &BTreeMap<String, Product>, output: &str, country: &Country) {
+fn write_to_file(m: &BTreeMap<String, Product>, output: &str, country: &Country, mut error_str: &mut String) {
     let max_count = m.len();
     let mut index = 1;
 
@@ -119,7 +118,7 @@ fn write_to_file(m: &BTreeMap<String, Product>, output: &str, country: &Country)
     }
 
     for i in m {
-        if let Some(product) = fetch_product_info(i.0.as_str(), country) {
+        if let Some(product) = fetch_product_info(i.0.as_str(), country, &mut error_str) {
             if let Err(error) = f.write_all(format!(
 				     "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
                      product.id,
@@ -142,18 +141,18 @@ fn write_to_file(m: &BTreeMap<String, Product>, output: &str, country: &Country)
 
             }
 
-            println!("{}/{}: {}", index, max_count, product.name);
+            println!("{}: {}: {}: {} ({}/{})", &i.1.department, &i.1.category, &i.1.subcategory, product.name, index, max_count);
             index += 1;
         }
     }
 }
 
-fn write_to_database(m: &BTreeMap<String, Product>, conn: &Connection, country: &Country) {
+fn write_to_database(m: &BTreeMap<String, Product>, conn: &Connection, country: &Country, mut error_str: &mut String) {
     let max_count = m.len();
     let mut index = 1;
 
     for i in m {
-        if let Some(product) = fetch_product_info(i.0.as_str(), country) {
+        if let Some(product) = fetch_product_info(i.0.as_str(), country, &mut error_str) {
             conn.execute("INSERT INTO product (
                               id,
                               name,
@@ -207,7 +206,7 @@ fn write_to_database(m: &BTreeMap<String, Product>, conn: &Connection, country: 
                                 &i.1.category_url,
                                 &i.1.subcategory_url,
                              ]).unwrap();
-            println!("{}/{}: {}", index, max_count, product.name);
+            println!("{}: {}: {}: {} ({}/{})", &i.1.department, &i.1.category, &i.1.subcategory, product.name, index, max_count);
             index += 1;
         }
     }
@@ -270,7 +269,7 @@ fn fetch_departments(country: &Country) -> Option<Vec<Department>> {
     return Some(departments);
 }
 
-fn fetch_products_from_all_departments(visited_urls: &mut BTreeMap<String, bool>, m: &mut BTreeMap<String, Product>, hierarchy: Vec<Department>) {
+fn fetch_products_from_all_departments(visited_urls: &mut BTreeMap<String, bool>, m: &mut BTreeMap<String, Product>, hierarchy: Vec<Department>, mut error_str: &mut String) {
     let department = if let Some(department) = hierarchy.last() {
         department
     } else {
@@ -282,6 +281,7 @@ fn fetch_products_from_all_departments(visited_urls: &mut BTreeMap<String, bool>
         Ok(doc) => doc,
         Err(error) => {
             println!("error: fetch_products_from_all_departments: {:?}", error);
+            error_str.push_str(&format!("Failed to fetch HTML at {}\n", address));
             return;
         }
     };
@@ -291,6 +291,7 @@ fn fetch_products_from_all_departments(visited_urls: &mut BTreeMap<String, bool>
             Ok(ms) => ms,
             Err(error) => {
                 println!("error: fetch_products_from_all_departments: {:?}", error);
+                error_str.push_str(&format!("Failed to fetch product metadata at {}\n", address));
                 return;
             }
         };
@@ -339,6 +340,7 @@ fn fetch_products_from_all_departments(visited_urls: &mut BTreeMap<String, bool>
             Ok(ms) => ms,
             Err(error) => {
                 println!("error: fetch_products_from_all_departments: {:?}", error);
+                error_str.push_str(&format!("Failed to fetch department data at {}\n", address));
                 return;
             }
         };
@@ -374,12 +376,10 @@ fn fetch_products_from_all_departments(visited_urls: &mut BTreeMap<String, bool>
             }
             visited_urls.insert(department.url.clone(), true);
 
-            println!("DEPARTMENT {}", &department.name);
-
             let mut next_hierarchy = hierarchy.clone();
             next_hierarchy.push(department);
 
-            fetch_products_from_all_departments(visited_urls, m, next_hierarchy);
+            fetch_products_from_all_departments(visited_urls, m, next_hierarchy, &mut error_str);
         }
     }
 }
@@ -387,8 +387,7 @@ fn fetch_products_from_all_departments(visited_urls: &mut BTreeMap<String, bool>
 fn has_product(document: &NodeRef) -> bool {
     let matches = match document.select("#productLists .productDetails, .seoProduct") {
         Ok(ms) => ms,
-        Err(error) => {
-            println!("error: has_product: {:?}", error);
+        Err(_) => {
             return false;
         }
     };
@@ -396,10 +395,12 @@ fn has_product(document: &NodeRef) -> bool {
     matches.count() > 0
 }
 
-fn fetch_product_info(url: &str, country: &Country) -> Option<Product> {
-    let document = match fetch_html(format!("{}{}", BASE_ADDRESS, url).as_str()) {
+fn fetch_product_info(url: &str, country: &Country, error_str: &mut String) -> Option<Product> {
+    let address = format!("{}{}", BASE_ADDRESS, url);
+    let document = match fetch_html(&address) {
         Ok(doc) => doc,
         Err(error) => {
+            error_str.push_str(&format!("Failed to fetch product data at {}\n", &address));
             println!("error: fetch_product_info: {}", error);
             return None;
         }
@@ -475,10 +476,11 @@ fn do_file(country: &Country, matches: &Matches) {
         None => "output.csv".to_string(),
     };
 
-    write_department_products(country, Output::File(output));
+    let mut error_str = String::new();
+    write_department_products(country, Output::File(output), &mut error_str);
 }
 
-fn do_database(country: &Country, matches: &Matches) {
+fn do_database(country: &Country, matches: &Matches) -> String {
     let dbhost: String = match matches.opt_str("dbhost") {
         Some(t) => t,
         None => "localhost".to_string(),
@@ -522,7 +524,16 @@ fn do_database(country: &Country, matches: &Matches) {
                      UNIQUE (id, country, url)
          )", &[]);
 
-    write_department_products(country, Output::Database(conn));
+    let mut error_str = String::new();
+    write_department_products(country, Output::Database(conn), &mut error_str);
+    error_str
+}
+
+fn report_error(error_str: &str) -> Result<Response> {
+    let client = Client::new();
+    let message = percent_encode(format!("http://email.bbh-labs.com.sg?from=BBH Labs <postmaster@mail.bbh-labs.com.sg>&subject=Error: IKEA Spider&text={}&to=jacky.boen@bartleboglehegarty.com&to=lee.adamson@bartleboglehegarty.com", error_str).as_bytes(), QUERY_ENCODE_SET).collect::<String>();
+    let res = try!(client.post(&message).send());
+    Ok(res)
 }
 
 fn print_usage(program: &str, opts: Options) {
@@ -638,7 +649,19 @@ fn main() {
         if typ == "file" {
             do_file(country, &matches);
         } else if typ == "database" {
-            do_database(country, &matches);
+            let error_str = &do_database(country, &matches);
+            if error_str.len() > 0 {
+                match report_error(error_str) {
+                    Ok(res) => if res.status == StatusCode::Ok {
+                        println!("Successfully reported error");
+                    } else {
+                        println!("Failed to report error: {}", res.status);
+                    },
+                    Err(err) => {
+                        println!("Failed to report error: {}", err);
+                    },
+                }
+            }
         }
 
         if !matches.opt_present("loop") {
