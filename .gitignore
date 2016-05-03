@@ -1,3 +1,9 @@
+# Custom
+*.swp
+*~
+*#
+*.csv
+
 # Compiled files
 *.o
 *.so
