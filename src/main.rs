@@ -73,7 +73,7 @@ enum Output {
     Database(Connection),
 }
 
-fn get_html(url: &str) -> Result<NodeRef> {
+fn fetch_html(url: &str) -> Result<NodeRef> {
     let client = Client::new();
     let mut res = try!(client.get(url).send());
 
@@ -87,23 +87,25 @@ fn write_department_products(country: &Country, output: Output) {
     let mut hashmap = HashMap::<String, Product>::new();
     let mut visited_urls = HashMap::<String, bool>::new();
 
-    let department = Department {
-        url: format!("{}/catalog/categories/departments/childrens_ikea/", &country.url),
-        name: String::from("Children's IKEA"),
+    let departments = match fetch_departments(&country) {
+        Some(departments) => departments,
+        None => return,
     };
 
-    println!("{}", &department.url);
+    for department in departments {
+        println!("{}", &department.url);
 
-    get_products_from_all_departments(&mut visited_urls, &mut hashmap, vec![department]);
-    println!("Total products: {}\n", hashmap.len());
+        fetch_products_from_all_departments(&mut visited_urls, &mut hashmap, vec![department]);
+        println!("Total products: {}\n", hashmap.len());
 
-    match output {
-        Output::File(filename) => write_to_file(hashmap, &filename, country),
-        Output::Database(conn) => write_to_database(hashmap, &conn, country),
+        match output {
+            Output::File(ref filename) => write_to_file(&hashmap, &filename, country),
+            Output::Database(ref conn) => write_to_database(&hashmap, &conn, country),
+        }
     }
 }
 
-fn write_to_file(hashmap: HashMap<String, Product>, output: &str, country: &Country) {
+fn write_to_file(hashmap: &HashMap<String, Product>, output: &str, country: &Country) {
     let max_count = hashmap.len();
     let mut index = 1;
 
@@ -117,7 +119,7 @@ fn write_to_file(hashmap: HashMap<String, Product>, output: &str, country: &Coun
     }
 
     for i in hashmap {
-        if let Some(product) = get_product_info(i.0.as_str(), country) {
+        if let Some(product) = fetch_product_info(i.0.as_str(), country) {
             if let Err(error) = f.write_all(format!(
 				     "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
                      product.id,
@@ -146,12 +148,12 @@ fn write_to_file(hashmap: HashMap<String, Product>, output: &str, country: &Coun
     }
 }
 
-fn write_to_database(hashmap: HashMap<String, Product>, conn: &Connection, country: &Country) {
+fn write_to_database(hashmap: &HashMap<String, Product>, conn: &Connection, country: &Country) {
     let max_count = hashmap.len();
     let mut index = 1;
 
     for i in hashmap {
-        if let Some(product) = get_product_info(i.0.as_str(), country) {
+        if let Some(product) = fetch_product_info(i.0.as_str(), country) {
             conn.execute("INSERT INTO product (
                               id,
                               name,
@@ -211,7 +213,68 @@ fn write_to_database(hashmap: HashMap<String, Product>, conn: &Connection, count
     }
 }
 
-fn get_products_from_all_departments(visited_urls: &mut HashMap<String, bool>, hashmap: &mut HashMap<String, Product>, hierarchy: Vec<Department>) {
+fn fetch_departments(country: &Country) -> Option<Vec<Department>> {
+    let address = &format!("{}{}", BASE_ADDRESS, &country.url);
+    let ref document = match fetch_html(address) {
+        Ok(doc) => doc,
+        Err(error) => {
+            println!("error: fetch_departments: {:?}", error);
+            return None;
+        }
+    };
+
+    let mut departments = Vec::new();
+    //let department = Department {
+    //    url: format!("{}/catalog/categories/departments/childrens_ikea/", &country.url),
+    //    name: String::from("Children's IKEA"),
+    //};
+
+    let matches = match document.select(".departmentLinkBlock a") {
+        Ok(ms) => ms,
+        Err(error) => {
+            println!("error: fetch_departments: {:?}", error);
+            return None;
+        }
+    };
+
+    for css_match in matches {
+        let node = css_match.as_node();
+
+        let data_ref = match node.data().clone() {
+            Element(data) => data.attributes.borrow().clone(),
+            _ => continue,
+        };
+
+        let url = match data_ref.get("href") {
+            None => continue,
+            Some(url) => url.to_string(),
+        };
+
+        if url == "#" {
+            continue;
+        }
+
+        let text_node = match node.first_child() {
+            Some(text_node) => text_node,
+            None => continue,
+        };
+
+
+        let name = match text_node.as_text() {
+            Some(text) => text.borrow().trim().to_string(),
+            None => continue,
+        };
+
+        departments.push(Department{
+            url: url,
+            name: name,
+        });
+    }
+
+    return Some(departments);
+}
+
+fn fetch_products_from_all_departments(visited_urls: &mut HashMap<String, bool>, hashmap: &mut HashMap<String, Product>, hierarchy: Vec<Department>) {
     let department = if let Some(department) = hierarchy.last() {
         department
     } else {
@@ -219,10 +282,10 @@ fn get_products_from_all_departments(visited_urls: &mut HashMap<String, bool>, h
     };
 
     let address = &format!("{}{}", BASE_ADDRESS, &department.url);
-    let ref document = match get_html(address) {
+    let ref document = match fetch_html(address) {
         Ok(doc) => doc,
         Err(error) => {
-            println!("error: get_products_from_all_departments: {:?}", error);
+            println!("error: fetch_products_from_all_departments: {:?}", error);
             return;
         }
     };
@@ -231,7 +294,7 @@ fn get_products_from_all_departments(visited_urls: &mut HashMap<String, bool>, h
         let matches = match document.select("#productLists .productDetails a, .seoProduct") {
             Ok(ms) => ms,
             Err(error) => {
-                println!("error: get_products_from_all_departments: {:?}", error);
+                println!("error: fetch_products_from_all_departments: {:?}", error);
                 return;
             }
         };
@@ -279,7 +342,7 @@ fn get_products_from_all_departments(visited_urls: &mut HashMap<String, bool>, h
         let matches = match document.select(".visualNavContainer a") {
             Ok(ms) => ms,
             Err(error) => {
-                println!("error: get_products_from_all_departments: {:?}", error);
+                println!("error: fetch_products_from_all_departments: {:?}", error);
                 return;
             }
         };
@@ -302,7 +365,7 @@ fn get_products_from_all_departments(visited_urls: &mut HashMap<String, bool>, h
             };
 
 
-            let text = if let Some(text) = get_node_text(&node.parent().unwrap(), ".categoryContainer a:first-child") {
+            let text = if let Some(text) = fetch_node_text(&node.parent().unwrap(), ".categoryContainer a:first-child") {
                 text
             } else {
                 continue;
@@ -320,7 +383,7 @@ fn get_products_from_all_departments(visited_urls: &mut HashMap<String, bool>, h
             let mut next_hierarchy = hierarchy.clone();
             next_hierarchy.push(department);
 
-            get_products_from_all_departments(visited_urls, hashmap, next_hierarchy);
+            fetch_products_from_all_departments(visited_urls, hashmap, next_hierarchy);
         }
     }
 }
@@ -337,24 +400,24 @@ fn has_product(document: &NodeRef) -> bool {
     matches.count() > 0
 }
 
-fn get_product_info(url: &str, country: &Country) -> Option<Product> {
-    let document = match get_html(format!("{}{}", BASE_ADDRESS, url).as_str()) {
+fn fetch_product_info(url: &str, country: &Country) -> Option<Product> {
+    let document = match fetch_html(format!("{}{}", BASE_ADDRESS, url).as_str()) {
         Ok(doc) => doc,
         Err(error) => {
-            println!("error: get_product_info: {}", error);
+            println!("error: fetch_product_info: {}", error);
             return None;
         }
     };
 
     Some(Product {
-        id: get_node_text(&document, "#itemNumber").unwrap_or_default(),
-        name: undup_chars(&get_node_text(&document, "#name").unwrap_or_default(), vec![' ']).replace("\n", ""),
-        typ: get_node_text(&document, "#type").unwrap_or_default(),
-        price: get_node_text(&document, "#price1").unwrap_or_default(),
+        id: fetch_node_text(&document, "#itemNumber").unwrap_or_default(),
+        name: undup_chars(&fetch_node_text(&document, "#name").unwrap_or_default(), vec![' ']).replace("\n", ""),
+        typ: fetch_node_text(&document, "#type").unwrap_or_default(),
+        price: fetch_node_text(&document, "#price1").unwrap_or_default(),
         country: country.name.to_string(),
-        unit: get_node_text(&document, ".productunit").unwrap_or_default(),
-        metric: get_node_text(&document, "#metric").unwrap_or_default(),
-        image_url: get_node_attr_value(&document, "#productImg", "src").unwrap_or_default(),
+        unit: fetch_node_text(&document, ".productunit").unwrap_or_default(),
+        metric: fetch_node_text(&document, "#metric").unwrap_or_default(),
+        image_url: fetch_node_attr_value(&document, "#productImg", "src").unwrap_or_default(),
         url: String::from(url),
 		department: "".to_string(),
 		category: "".to_string(),
@@ -365,7 +428,7 @@ fn get_product_info(url: &str, country: &Country) -> Option<Product> {
     })
 }
 
-fn get_node_text(document: &NodeRef, css_selector: &str) -> Option<String> {
+fn fetch_node_text(document: &NodeRef, css_selector: &str) -> Option<String> {
     let css_matches = match document.select(css_selector) {
         Ok(css_matches) => css_matches,
         Err(_) => return None,
@@ -387,7 +450,7 @@ fn get_node_text(document: &NodeRef, css_selector: &str) -> Option<String> {
     }
 }
 
-fn get_node_attr_value(document: &NodeRef, css_selector: &str, name: &str) -> Option<String> {
+fn fetch_node_attr_value(document: &NodeRef, css_selector: &str, name: &str) -> Option<String> {
     let css_matches = match document.select(css_selector) {
         Ok(css_matches) => css_matches,
         Err(_) => return None,
