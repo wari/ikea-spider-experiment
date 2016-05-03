@@ -224,10 +224,6 @@ fn fetch_departments(country: &Country) -> Option<Vec<Department>> {
     };
 
     let mut departments = Vec::new();
-    //let department = Department {
-    //    url: format!("{}/catalog/categories/departments/childrens_ikea/", &country.url),
-    //    name: String::from("Children's IKEA"),
-    //};
 
     let matches = match document.select(".departmentLinkBlock a") {
         Ok(ms) => ms,
