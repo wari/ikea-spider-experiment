@@ -13,7 +13,7 @@ use std::string::String;
 use std::collections::HashMap;
 use std::result;
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration,Instant};
 
 // Hyper
 use hyper::client::Client;
@@ -410,7 +410,7 @@ fn fetch_product_info(url: &str, country: &Country) -> Option<Product> {
     };
 
     Some(Product {
-        id: fetch_node_text(&document, "#itemNumber").unwrap_or_default(),
+        id: fetch_node_text(&document, "#itemNumber").unwrap_or_default().replace(".", ""),
         name: undup_chars(&fetch_node_text(&document, "#name").unwrap_or_default(), vec![' ']).replace("\n", ""),
         typ: fetch_node_text(&document, "#type").unwrap_or_default(),
         price: fetch_node_text(&document, "#price1").unwrap_or_default(),
@@ -494,12 +494,12 @@ fn do_database(country: &Country, matches: &Matches) {
     };
 
     let dbuser: String = match matches.opt_str("dbuser") {
-        Some(t) => percent_encode(t.as_bytes(), QUERY_ENCODE_SET).collect::<String>(),
+        Some(t) => percent_encode(t.as_bytes(), USERINFO_ENCODE_SET).collect::<String>(),
         None => "postgres".to_string(),
     };
 
     let dbpass: String = match matches.opt_str("dbpass") {
-        Some(t) => format!(":{}", percent_encode(t.as_bytes(), QUERY_ENCODE_SET)),
+        Some(t) => format!(":{}", percent_encode(t.as_bytes(), USERINFO_ENCODE_SET)),
         None => "".to_string(),
     };
 
@@ -637,6 +637,8 @@ fn main() {
     };
 
     loop {
+        let start_time = Instant::now();
+
         if typ == "file" {
             do_file(country, &matches);
         } else if typ == "database" {
@@ -647,6 +649,10 @@ fn main() {
             break;
         }
 
-        sleep(Duration::new(interval, 0));
+        let elapsed_duration = start_time.elapsed();
+        let interval_duration = Duration::new(interval, 0);
+        if interval_duration > elapsed_duration {
+            sleep(interval_duration - elapsed_duration);
+        }
     }
 }
