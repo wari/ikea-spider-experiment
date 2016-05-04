@@ -529,9 +529,16 @@ fn do_database(country: &Country, matches: &Matches) -> String {
     error_str
 }
 
-fn report_error(error_str: &str) -> Result<Response> {
+fn report_error(error_str: &str, emails: &Vec<String>) -> Result<Response> {
     let client = Client::new();
-    let message = percent_encode(format!("http://email.bbh-labs.com.sg?from=BBH Labs <postmaster@mail.bbh-labs.com.sg>&subject=Error: IKEA Spider&text={}&to=jacky.boen@bartleboglehegarty.com&to=lee.adamson@bartleboglehegarty.com", error_str).as_bytes(), QUERY_ENCODE_SET).collect::<String>();
+
+    // Format emails into query format
+    let mut formatted_emails = String::new();
+    for email in emails {
+        formatted_emails.push_str(&format!("&to={}", &email));
+    }
+
+    let message = percent_encode(format!("http://email.bbh-labs.com.sg?from=BBH Labs <postmaster@mail.bbh-labs.com.sg>&subject=Error: IKEA Spider&text={}{}", error_str, formatted_emails).as_bytes(), QUERY_ENCODE_SET).collect::<String>();
     let res = try!(client.post(&message).send());
     Ok(res)
 }
@@ -596,6 +603,7 @@ fn main() {
                 "interval",
                 "set loop interval in seconds (default: 60)",
                 "SECS");
+    opts.optmulti("e", "email", "email to this address if there's an error", "EMAIL");
     opts.optflag("l", "loop", "forever scrape the website");
     opts.optflag("h", "help", "print this help menu");
 
@@ -643,6 +651,17 @@ fn main() {
         None => 60,
     };
 
+    let emails = matches.opt_strs("e");
+    {
+        if emails.len() > 0 {
+            print!("Will email errors to: ");
+            for email in &emails {
+                print!("{} ", &email);
+            }
+            println!("");
+        }
+    }
+
     loop {
         let start_time = Instant::now();
 
@@ -651,7 +670,7 @@ fn main() {
         } else if typ == "database" {
             let error_str = &do_database(country, &matches);
             if error_str.len() > 0 {
-                match report_error(error_str) {
+                match report_error(error_str, &emails) {
                     Ok(res) => if res.status == StatusCode::Ok {
                         println!("Successfully reported error");
                     } else {
