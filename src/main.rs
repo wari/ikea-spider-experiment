@@ -564,6 +564,7 @@ fn main() {
         Country { name: "Malaysia English", url: "/my/en" },
         Country { name: "Malaysia Bahasa", url: "/my/ms" },
         Country { name: "Thailand Thai", url: "/th/th" },
+        Country { name: "Thailand English", url: "/th/en" },
     ];
 
     // Parse program arguments
