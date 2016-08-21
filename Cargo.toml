@@ -6,7 +6,7 @@ authors = ["Jacky Boen <jacky.boen@bartleboglehegarty.com>"]
 [dependencies]
 kuchiki = "*"
 hyper = "*"
-postgres = "*"
+postgres = "0.11"
 url = "*"
 getopts = "*"
 undup = "*"
